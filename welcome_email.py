@@ -1,17 +1,20 @@
+# Import required libraries
 import json
-
 import boto3 as boto3
 from sqlalchemy import create_engine, Column, String
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 
+# Create base class for SQLAlchemy models
 Base = declarative_base()
 
 
+# Define User model corresponding to the users table in database
 class User(Base):
     __tablename__ = 'users'
-    __table_args__ = {'schema': 'public'}  # specify the schema here
+    __table_args__ = {'schema': 'public'}  # Specify the database schema
 
+    # Define table columns
     id = Column(UUID(as_uuid=True), primary_key=True)
     first_name = Column(String)
     last_name = Column(String)
@@ -20,64 +23,83 @@ class User(Base):
     status = Column(String)
 
 
+# Main Lambda handler function
 def lambda_handler(event, context):
     print('starting processing')
+    
+    # Extract database configuration from event
     host = event.get('DB_HOST')
     database = event.get('DB_DATABASE')
     user = event.get('DB_USER')
     password = event.get('DB_PASSWORD')
     port = event.get('DB_PORT')
     print(event)
-    if host == 'localhost':  ## for testing
+
+    # Handle local testing scenario
+    if host == 'localhost':
         print('local testing')
         host = 'host.docker.internal'
 
-    # create sql alchemy engine
+    # Create database connection
     engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{database}')
-
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    # Query users with 'PROCESSING' status
     users = session.query(User).filter(User.status == 'PROCESSING').all()
+    
+    # Initialize dictionaries to track success and errors
     errors = {}
     success = {}
+
+    # Process each user
     for user in users:
-        recipient_email = user.email  # Replace with the recipient's email address
-        verification_url=''
-        # Define the message_data that corresponds to the placeholders in your template
+        recipient_email = user.email
+        verification_url = ''  # URL should be generated based on your verification system
+        
+        # Prepare email template data
         message_data = {
             'message_mailData_name': f'''{user.first_name} {user.last_name}''',
             'message_mailData_verificationURL': verification_url
         }
 
-        # ses_region = 'us-east-1'  # Replace with your desired SES region
-        ses_region = 'us-east-2'  # Replace with your desired SES region
+        # Set AWS SES region
+        ses_region = 'us-east-2'
 
         try:
+            # Send verification email
             response = send_email_with_template(recipient_email, message_data, ses_region)
             print("Email sent successfully!")
             print("Message ID:", response['MessageId'])
             print(response)
+            
+            # Record successful email send
             success[recipient_email] = response
+            
+            # Update user status to 'NOT_VERIFIED'
             user.status = 'NOT_VERIFIED'
             session.commit()
 
         except Exception as e:
+            # Handle and record any errors
             print("Error sending email:", str(e))
             errors[recipient_email] = e
 
+    # Return response with success and error information
     return {
         'statusCode': 200,
         'body': json.dumps({'success': success, 'errors': errors})
     }
 
 
+# Function to send email using AWS SES
 def send_email_with_template(recipient_email, message_data, region):
+    # Initialize SES client
     ses_client = boto3.client('ses', region_name=region)
 
-
+    # Send email using SES
     response = ses_client.send_email(
-        Source='alert@therapydesk.com',  # Replace with your SES-verified sender email address
+        Source='alert@therapydesk.com',  # Sender email address
         Destination={
             'ToAddresses': [recipient_email]
         },
@@ -86,9 +108,6 @@ def send_email_with_template(recipient_email, message_data, region):
                 'Data': 'Welcome to Therapy Desk - Please Verify Your Account'
             },
             'Body': {
-                # 'Text': {
-                #     'Data': text_body
-                # },
                 'Html': {
                     'Data': f'''
 <!DOCTYPE html>

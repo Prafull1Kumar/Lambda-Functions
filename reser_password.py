@@ -1,18 +1,21 @@
+# Import required libraries
 import json
 import os
-
 import boto3 as boto3
 from sqlalchemy import create_engine, text, MetaData, Integer, Column, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
+# Create base class for SQLAlchemy models
 Base = declarative_base()
 
 
+# Define User model for the users table
 class User(Base):
     __tablename__ = 'users'
-    __table_args__ = {'schema': 'public'}  # specify the schema here
+    __table_args__ = {'schema': 'public'}  # Set database schema
 
+    # Define user table columns
     id = Column(UUID(as_uuid=True), primary_key=True)
     first_name = Column(String)
     last_name = Column(String)
@@ -20,23 +23,25 @@ class User(Base):
     phone = Column(String)
     status = Column(String)
     alert_status = Column(String)
-    reset_key = Column(String)
+    reset_key = Column(String)  # Stores password reset token
 
 
+# Define UserCredential model for storing user authentication data
 class UserCredential(Base):
     __tablename__ = 'user_credentials'
     __table_args__ = {'schema': 'public'}
 
+    # Define credential table columns
     id = Column(UUID(as_uuid=True), primary_key=True)
-    user_id = Column(UUID(as_uuid=True), index=True)
-    password = Column(String)
-    temp_password = Column(String)
+    user_id = Column(UUID(as_uuid=True), index=True)  # Indexed for faster lookups
+    password = Column(String)  # Stores hashed password
+    temp_password = Column(String)  # Stores temporary password during reset
 
 
-
-
+# Main Lambda handler for password reset email functionality
 def lambda_handler(event, context):
     try:
+        # Extract user_id from event and validate
         user_id = event.get('user_id')
         if user_id is None:
             return {
@@ -44,6 +49,7 @@ def lambda_handler(event, context):
                 'body': 'Error: user_id not present in the payload.'
             }
         
+        # Extract database configuration from event
         host = event.get('DB_HOST')
         database = event.get('DB_DATABASE')
         user = event.get('DB_USER')
@@ -52,31 +58,33 @@ def lambda_handler(event, context):
         schema = event.get('DB_SCHEMA')
         base_url = event.get('BaseUrl')
         print(event)
-        if host == 'localhost':  ## for testing
+
+        # Handle local testing environment
+        if host == 'localhost':
             print('local testing')
             host = 'host.docker.internal'
-        # create sql alchemy engine
-        engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{database}')
 
+        # Initialize database connection
+        engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{database}')
         Session = sessionmaker(bind=engine)
         session = Session()
 
+        # Fetch user details from database
         user = session.query(User).get(user_id)
 
-        recipient_email = user.email  # Replace with the recipient's email address
-
-        # Define the message_data that corresponds to the placeholders in your template
+        # Prepare email data
+        recipient_email = user.email
         message_data = {
-            # Update the message_data with the new template variables as needed
             'full_name': f'{user.first_name} {user.last_name}',
-            'message_mailData_passwordChangeURL': '',
-            'email':user.email
-
+            'message_mailData_passwordChangeURL': '',  # Password reset URL should be generated
+            'email': user.email
         }
 
-        ses_region = 'us-east-2'  # Replace with your desired SES region
+        # Set AWS SES region
+        ses_region = 'us-east-2'
 
         try:
+            # Send password reset email
             response = send_email_with_template(recipient_email, message_data, ses_region)
             print("Email sent successfully!")
             print("Message ID:", response['MessageId'])
@@ -86,12 +94,14 @@ def lambda_handler(event, context):
             }
 
         except Exception as e:
+            # Handle email sending errors
             print("Error sending email:", str(e))
             return {
                 'statusCode': 500,
                 'body': str(e)
             }
     except Exception as e:
+        # Handle general errors
         print("Error:", str(e))
         return {
             'statusCode': 500,
@@ -99,12 +109,14 @@ def lambda_handler(event, context):
         }
 
 
+# Function to send password reset email using AWS SES
 def send_email_with_template(recipient_email, message_data, region):
+    # Initialize SES client
     ses_client = boto3.client('ses', region_name=region)
 
-
+    # Send email using SES
     response = ses_client.send_email(
-        Source='alerts@therapydesk.com',  # Replace with your SES-verified sender email address
+        Source='alerts@therapydesk.com',  # Sender email address
         Destination={
             'ToAddresses': [recipient_email]
         },
@@ -113,9 +125,7 @@ def send_email_with_template(recipient_email, message_data, region):
                 'Data': 'Therapy Desk : Reset your password'
             },
             'Body': {
-                # 'Text': {
-                #     'Data': text_body
-                # },
+               
                 'Html': {
                     'Data': f'''<!DOCTYPE html>
 <html>
