@@ -15,7 +15,6 @@ This repository contains AWS Lambda functions for handling email operations in t
 - Function Name: `send-reset-password-email`
 - Handles password reset requests
 - Sends secure reset links
-- Manages reset attempts and rate limiting
 
 ## Prerequisites
 - AWS Account
