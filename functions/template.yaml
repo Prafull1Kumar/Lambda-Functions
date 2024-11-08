@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  livsytImports
+
+  Sample SAM Template for livsytImports
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 900
+
+Resources:
+  ImportApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: Default Api for livsyt imports
+      StageName: Staging
+      Cors:
+        AllowOrigin: "'*'"
+  WelcomeEmailFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: WelcomeEmailFunction
+      CodeUri: functions/welcome_email
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      MemorySize: 512      
